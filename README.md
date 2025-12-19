@@ -48,6 +48,17 @@ A generalized visual inspection engine that understands mechanical context.
 
 ---
 
+## ⚖️ Evaluation & Limitations (MVP Status)
+Honest assessment of the current Zero-Shot Prototype vs. Production Standards:
+
+| Metric | Current Status | Production Goal | Future Plan |
+| :--- | :--- | :--- | :--- |
+| **Speed** | ~3 sec (Cloud API) | < 0.5 sec | Shift to Edge AI models. |
+| **Accuracy** | Good at logical reasoning | Needs higher precision | Add human feedback loop (RLHF). |
+| **Data** | Zero Training Needed | Continuous Learning | Save user corrections to retrain. |
+
+---
+
 ## 🚀 Future Roadmap
 * Integration with IoT sensors for conveyor belt automation.
 * Dashboard for historical defect analytics.
@@ -57,4 +68,5 @@ A generalized visual inspection engine that understands mechanical context.
 
 ### 👨‍💻 Developed by
 **Himanshu Sharma**
-*Aspiring Product Manager*
+
+*Aspiring AI Product Manager*
