@@ -11,8 +11,12 @@ st.markdown("### Powered by Google Gemini")
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # API Key Input
-    api_key = st.text_input("Enter Google API Key", type="password")
+    # API Key Handling (Auto-Detect from Secrets)
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]  # Cloud se uthao
+        st.success("✅ Connected to Server Key")
+    else:
+        api_key = st.text_input("Enter Google API Key", type="password") # Fallback
     
     # List to store found models
     available_model_names = []
