@@ -13,7 +13,7 @@ st.caption("Powered by Google Gemini AI")
 
 # 2. API KEY (HARDCODED FOR DEMO)
 # Humne tumhari key yahan direct daal di hai taaki koi error na aaye
-api_key = "AIzaSyDHF4cdHqH7Fv9vY4XggxtDkvCSGvgNlq8"
+api_key = "AIzaSyAvlkV1NI8qNglHdZCyZ839q-Uxv2XLF50"
 
 # Configure Google AI
 genai.configure(api_key=api_key)
