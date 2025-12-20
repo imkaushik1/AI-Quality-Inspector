@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import pandas as pd
+import time
 
 # 1. Page Configuration
 st.set_page_config(page_title="AI Quality Inspector Pro", page_icon="🏭", layout="wide")
@@ -19,21 +20,32 @@ with st.sidebar:
     else:
         api_key = st.text_input("Enter Google API Key", type="password")
 
+# --- SELF-HEALING FUNCTION ---
+def analyze_image_with_backup(image, prompt):
+    """
+    Tries multiple models automatically if one fails.
+    Priority: Flash -> Flash-Latest -> Pro-Vision
+    """
+    models_to_test = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro-vision"]
+    
+    for model_name in models_to_test:
+        try:
+            # Try initializing and generating with current model
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content([prompt, image])
+            return response.text.strip() # Success! Return immediately.
+        except Exception:
+            continue # Silently try the next model
+            
+    # If all models fail, raise the last error
+    raise Exception("All AI models failed. Please check API Key or Server Status.")
+
 # 3. Core Logic
 if api_key:
     try:
         genai.configure(api_key=api_key)
         
-        # --- UNIVERSAL MODEL SETUP ---
-        # Hum 'system_instruction' hata rahe hain taaki error na aaye.
-        # Direct model call karenge.
-        try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
-        except:
-            # Fallback for older servers
-            model = genai.GenerativeModel("gemini-pro-vision")
-
-        # --- SYSTEM PROMPT (Text variable) ---
+        # System Prompt (Simple text to work with all models)
         system_prompt = """
         Act as a Senior Quality Control Engineer. Analyze this industrial component image.
         1. Detect any visible defects (rust, cracks, deformation, discoloration, missing parts).
@@ -69,13 +81,10 @@ if api_key:
                     try:
                         image = Image.open(uploaded_file)
                         
-                        # --- UNIVERSAL CALL METHOD ---
-                        # Hum Image aur Prompt dono ek list mein bhej rahe hain.
-                        # Ye method kabhi fail nahi hota.
-                        response = model.generate_content([system_prompt, image])
-                        ai_output = response.text.strip()
+                        # CALL THE SMART FUNCTION
+                        ai_output = analyze_image_with_backup(image, system_prompt)
                         
-                        # Logic to check PASS/FAIL
+                        # Parsing Logic
                         if "Status: PASS" in ai_output:
                             status = "PASS"
                             reason = "Clean Component / No Defects"
@@ -90,12 +99,11 @@ if api_key:
                         })
                         
                     except Exception as e:
-                        # Error handling taaki code ruke nahi
                         st.error(f"Error processing {uploaded_file.name}: {e}")
                         results_data.append({
                             "File Name": uploaded_file.name,
                             "Status": "ERROR",
-                            "Reason/Analysis": "Could not process image"
+                            "Reason/Analysis": "Processing Failed"
                         })
 
                 # 5. Final Dashboard
@@ -120,9 +128,7 @@ if api_key:
                         elif val == 'FAIL': return 'background-color: #f8d7da; color: black'
                         else: return 'color: black'
 
-                    # Safe Table Display
                     st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
-                    
                     st.success("✅ Batch Inspection Completed!")
 
         else:
