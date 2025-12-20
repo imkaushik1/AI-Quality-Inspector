@@ -9,7 +9,7 @@ st.set_page_config(page_title="AI Quality Inspector Pro", page_icon="🏭", layo
 
 st.title("🏭 AI Quality Inspector Pro")
 st.markdown("### Universal Defect Detection System")
-st.caption("Powered by Google Gemini 1.5 Flash (High Capacity Mode)")
+st.caption("Powered by Google Gemini AI (Auto-Optimized)")
 
 # 2. SECURE API KEY HANDLING
 if "GOOGLE_API_KEY" in st.secrets:
@@ -18,15 +18,50 @@ if "GOOGLE_API_KEY" in st.secrets:
         st.header("⚙️ Settings")
         st.success("✅ Secure Key Loaded!")
 else:
-    st.error("🚨 API Key Missing! Add it to Streamlit Secrets.")
+    st.error("🚨 API Key Missing! Please add it to Streamlit Secrets.")
     st.stop()
 
 # Configure Google AI
 genai.configure(api_key=api_key)
 
-# --- CRITICAL FIX: HARDCODE THE HIGH-LIMIT MODEL ---
-# Hum auto-detect hata rahe hain kyunki wo low-limit wala model utha raha tha.
-active_model_name = "gemini-1.5-flash"
+# --- SMART MODEL FINDER (The Real Fix) ---
+def get_best_model():
+    """
+    Ye function server se available models ki list mangta hai.
+    Hum '2.5' ko avoid karenge (low quota) aur '1.5' ya 'pro' dhundenge.
+    """
+    try:
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
+        
+        # Priority 1: 1.5 Flash (Best Balance)
+        for m in available_models:
+            if "gemini-1.5-flash" in m and "2.5" not in m:
+                return m
+        
+        # Priority 2: Gemini Pro Vision (Old Reliable)
+        for m in available_models:
+            if "vision" in m:
+                return m
+                
+        # Priority 3: Gemini 1.5 Pro (Powerful but slower)
+        for m in available_models:
+            if "gemini-1.5-pro" in m:
+                return m
+
+        # Emergency Fallback: Agar kuch na mile to jo hai wo dedo (even 2.5)
+        return available_models[0] if available_models else "gemini-1.5-flash"
+    except:
+        return "gemini-1.5-flash"
+
+# 3. Main Logic
+active_model_name = get_best_model()
+
+# Sidebar me dikhao kaunsa model select hua
+with st.sidebar:
+    st.info(f"🤖 Active Model: {active_model_name}")
 
 system_prompt = """
 Analyze this industrial image for defects (rust, cracks, damage).
@@ -43,7 +78,7 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-    st.info(f"ℹ️ Optimized Mode: Using {active_model_name} for maximum daily quota.")
+    st.info(f"ℹ️ Processing with {active_model_name}. Speed limit active to prevent errors.")
     
     if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
         
@@ -64,25 +99,28 @@ if uploaded_files:
                 status_placeholder = st.empty()
                 with st.spinner(f"Scanning Item #{index+1}..."):
                     
-                    # --- SMART RETRY LOGIC (ZIDDI MODE) ---
+                    # RETRY LOGIC for Quota Errors
                     max_retries = 3
                     ai_output = "Error"
                     
                     for attempt in range(max_retries):
                         try:
-                            # AI Call
                             response = model.generate_content([system_prompt, image])
                             ai_output = response.text.strip()
-                            break # Agar safal hua to loop todo
+                            break 
                         except Exception as e:
                             error_msg = str(e)
+                            # Agar Quota error aaye (429) to wait karo
                             if "429" in error_msg:
-                                # Agar Quota error aaye to 30 second ruko
-                                status_placeholder.warning(f"⚠️ High Traffic. Retrying in 30s... (Attempt {attempt+1}/{max_retries})")
-                                time.sleep(30)
+                                status_placeholder.warning(f"⚠️ High Traffic. Retrying in 20s... (Attempt {attempt+1})")
+                                time.sleep(20)
+                            # Agar 404 aaye to loop break karke error dikhao
+                            elif "404" in error_msg:
+                                ai_output = f"Model Error: {error_msg}"
+                                break
                             else:
                                 ai_output = f"Error: {error_msg}"
-                                break
+                                time.sleep(5)
                     
                     # Result Processing
                     if "Status: PASS" in ai_output:
@@ -104,10 +142,10 @@ if uploaded_files:
                         "Reason": reason
                     })
                     
-                    # Normal Gap
-                    time.sleep(2)
+                    # Safety Gap
+                    time.sleep(5)
 
-        # 4. Final Summary (High Visibility)
+        # 4. Final Summary
         st.divider()
         st.subheader("📋 Final Report Summary")
         if results_data:
@@ -118,7 +156,6 @@ if uploaded_files:
             m2.metric("Passed", len(df[df["Status"] == "PASS"]))
             m3.metric("Defective", len(df[df["Status"] == "FAIL"]))
 
-            # Black Text Fix
             def highlight_row(row):
                 if row['Status'] == 'PASS':
                     return ['background-color: #d4edda; color: black'] * len(row)
