@@ -32,8 +32,8 @@ if api_key:
         3. If a defect is found, output: "Status: FAIL" followed by a concise reason (max 15 words).
         """
         
-        # Using the specific latest model version to avoid 404
-        model = genai.GenerativeModel("gemini-1.5-flash-latest", system_instruction=system_prompt)
+        # FIXED MODEL NAME HERE (Standard Version)
+        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=system_prompt)
 
         # 4. Batch Image Uploader
         uploaded_files = st.file_uploader(
@@ -78,7 +78,7 @@ if api_key:
                     except Exception as e:
                         st.error(f"Error processing {uploaded_file.name}: {e}")
 
-                # 5. Final Dashboard (Only runs if data exists)
+                # 5. Final Dashboard
                 st.divider()
                 
                 if results_data:
@@ -103,8 +103,6 @@ if api_key:
                     st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
                     
                     st.success("✅ Inspection Completed!")
-                else:
-                    st.error("❌ Inspection failed. Please check your API Key or try again.")
 
         else:
             st.info("👆 Upload multiple images to simulate a batch check.")
