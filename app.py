@@ -27,7 +27,7 @@ if api_key:
     try:
         genai.configure(api_key=api_key)
         
-        # System Prompt - Acting as a Senior QA Engineer
+        # System Prompt
         system_prompt = """
         You are a Senior Quality Control Engineer. Analyze this industrial component image.
         1. Detect any visible defects (rust, cracks, deformation, discoloration, missing parts).
@@ -51,10 +51,7 @@ if api_key:
             st.divider()
             st.subheader("🔍 Inspection Results")
             
-            # List to store processing results
             results_data = []
-            
-            # UI Elements for progress
             progress_bar = st.progress(0)
             status_text = st.empty()
 
@@ -62,28 +59,21 @@ if api_key:
             if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
                 
                 for index, uploaded_file in enumerate(uploaded_files):
-                    # Update User Interface
                     status_text.text(f"Inspecting Item {index + 1}/{len(uploaded_files)}...")
                     progress_bar.progress((index + 1) / len(uploaded_files))
                     
                     try:
-                        # Load Image
                         image = Image.open(uploaded_file)
-                        
-                        # API Call
                         response = model.generate_content(image)
                         ai_output = response.text.strip()
                         
-                        # Parse Response (Pass/Fail Logic)
                         if "Status: PASS" in ai_output:
                             status = "PASS"
                             reason = "Clean Component / No Defects"
                         else:
                             status = "FAIL"
-                            # Extracting the reason after the hyphen
                             reason = ai_output.split("-")[-1].strip() if "-" in ai_output else ai_output
                         
-                        # Append to results
                         results_data.append({
                             "File Name": uploaded_file.name,
                             "Status": status,
@@ -97,10 +87,8 @@ if api_key:
                 st.divider()
                 status_text.text("Inspection Completed.")
                 
-                # Convert results to DataFrame
                 df = pd.DataFrame(results_data)
                 
-                # Metrics Display
                 col1, col2, col3 = st.columns(3)
                 total = len(df)
                 passed = len(df[df["Status"] == "PASS"])
@@ -110,12 +98,27 @@ if api_key:
                 col2.metric("✅ Passed Components", passed)
                 col3.metric("❌ Defective Components", failed)
                 
-                # Detailed Data Table
                 st.markdown("### 📋 Detailed Inspection Log")
                 
-                # Styling the dataframe for better visualization
+                # Styling function
                 def highlight_status(val):
-                    color = '#d4edda' if val == 'PASS' else '#f8d7da' # Light Green vs Light Red
+                    color = '#d4edda' if val == 'PASS' else '#f8d7da'
                     return f'background-color: {color}; color: black'
 
-             st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
+                # FIXED LINE IS HERE (Correctly Indented)
+                try:
+                    st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
+                except AttributeError:
+                    # Fallback for older pandas versions
+                    st.dataframe(df.style.applymap(highlight_status, subset=['Status']), use_container_width=True)
+                
+                st.success("✅ Batch Inspection Successfully Completed")
+
+        else:
+            st.info("👆 Upload multiple images to simulate a batch production line check.")
+
+    except Exception as e:
+        st.error(f"Configuration Error: {e}")
+
+else:
+    st.warning("⚠️ Please enter your Google API Key to activate the system.")
