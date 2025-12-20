@@ -2,34 +2,37 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 
-# 1. Page Title
-st.title("🏭 AI Quality Inspector (Fresh Start)")
+st.set_page_config(page_title="Quality Inspector", page_icon="🏭")
 
-# 2. API Key Box
+st.title("🏭 AI Quality Inspector (Stable)")
+
+# 1. API Key Setup
+# Humne wapis simple input box rakha hai taaki errors kam ho
 api_key = st.text_input("Enter Google API Key", type="password")
 
-# 3. Main Logic
 if api_key:
-    # Setup
+    # 2. Configuration
     genai.configure(api_key=api_key)
     
-    # Upload Image
-    uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "png", "jpeg"])
+    uploaded_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"])
 
     if uploaded_file:
-        st.image(uploaded_file, caption="Uploaded Image", width=300)
+        st.image(uploaded_file, caption="Inspecting...", width=300)
         
-        if st.button("Check Quality"):
+        if st.button("Check Defects"):
             try:
-                # Sabse latest model try karte hain
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                # --- YE HAI MAIN CHANGE ---
+                # Hum 'flash' use nahi karenge, wo naya hai aur error de raha hai.
+                # Hum 'gemini-pro-vision' use karenge jo old server par bhi chalta hai.
+                model = genai.GenerativeModel("gemini-pro-vision")
                 
-                # Simple Prompt
-                response = model.generate_content(["Is this industrial part defective? Answer Yes/No and give a reason.", Image.open(uploaded_file)])
+                # Request bhejo
+                response = model.generate_content(["Check this industrial part for defects (rust, crack). Answer with PASS or FAIL and reason.", Image.open(uploaded_file)])
                 
-                # Result Dikhana
-                st.success("Analysis Complete:")
+                # Result dikhao
+                st.success("Result:")
                 st.write(response.text)
                 
             except Exception as e:
-                st.error(f"Error aaya: {e}")
+                # Agar ye bhi fail hua to error dikhayega
+                st.error(f"Error details: {e}")
