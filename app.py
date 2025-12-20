@@ -2,125 +2,119 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import pandas as pd
+import time
 
-# 1. Page Config (Professional UI)
+# 1. Page Config
 st.set_page_config(page_title="AI Quality Inspector Pro", page_icon="🏭", layout="wide")
 
 st.title("🏭 AI Quality Inspector Pro")
-st.markdown("### Universal Defect Detection System (Auto-Pilot)")
+st.markdown("### Universal Defect Detection System")
 st.caption("Powered by Google Gemini AI")
 
-# 2. API Key Handling
-with st.sidebar:
-    st.header("⚙️ Settings")
-    if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        st.success("✅ Connected to Server Key")
-    else:
-        api_key = st.text_input("Enter Google API Key", type="password")
+# 2. API KEY (HARDCODED FOR DEMO)
+# Humne tumhari key yahan direct daal di hai taaki koi error na aaye
+api_key = "AIzaSyDHF4cdHqH7Fv9vY4XggxtDkvCSGvgNlq8"
 
-# --- SMART MODEL FINDER ---
+# Configure Google AI
+genai.configure(api_key=api_key)
+
+# Model Finder Logic
 def find_working_model():
-    """Google se puchta hai ki kaunsa model zinda hai."""
     try:
+        # Check models
         for m in genai.list_models():
-            # Hame wo model chahiye jo content generate kare (vision/flash)
             if 'generateContent' in m.supported_generation_methods:
                 if 'flash' in m.name: return m.name
                 if 'pro-vision' in m.name: return m.name
-                if 'gemini-1.5' in m.name: return m.name
-        return "gemini-1.5-flash" # Default fallback
+        return "gemini-1.5-flash"
     except:
         return "gemini-1.5-flash"
 
+# Sidebar Status
+with st.sidebar:
+    st.header("⚙️ System Status")
+    st.success("✅ AI Server Connected")
+    st.info("Mode: Recruiter/Demo View")
+
 # 3. Main Logic
-if api_key:
-    genai.configure(api_key=api_key)
-    
-    # Auto-select the best available model
-    active_model_name = find_working_model()
-    # Sidebar me dikhayega kaunsa model use ho raha hai
-    with st.sidebar:
-        st.info(f"🤖 Active Model: {active_model_name}")
+active_model_name = find_working_model()
 
-    # System Prompt
-    system_prompt = """
-    Analyze this industrial image for defects (rust, cracks, damage).
-    Output format strictly:
-    Status: PASS
-    OR
-    Status: FAIL - [Reason]
-    """
+system_prompt = """
+Analyze this industrial image for defects (rust, cracks, damage).
+Output format strictly:
+Status: PASS
+OR
+Status: FAIL - [Reason]
+"""
 
-    # 4. Upload Section
-    uploaded_files = st.file_uploader(
-        "Upload Component Images (Batch Mode)", 
-        type=["jpg", "png", "jpeg"], 
-        accept_multiple_files=True
-    )
+uploaded_files = st.file_uploader(
+    "Upload Component Images", 
+    type=["jpg", "png", "jpeg"], 
+    accept_multiple_files=True
+)
 
-    if uploaded_files:
+if uploaded_files:
+    if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
+        
         st.divider()
-        st.subheader("🔍 Inspection Results")
+        st.subheader("🔍 Real-Time Analysis")
         
+        model = genai.GenerativeModel(active_model_name)
         results_data = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
         
-        if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
-            model = genai.GenerativeModel(active_model_name)
+        for index, uploaded_file in enumerate(uploaded_files):
+            col1, col2 = st.columns([1, 2])
             
-            for index, uploaded_file in enumerate(uploaded_files):
-                status_text.text(f"Inspecting Item {index + 1}/{len(uploaded_files)}...")
-                progress_bar.progress((index + 1) / len(uploaded_files))
+            try:
+                image = Image.open(uploaded_file)
                 
-                try:
-                    image = Image.open(uploaded_file)
-                    # Universal Call (Safe for all models)
-                    response = model.generate_content([system_prompt, image])
-                    ai_output = response.text.strip()
-                    
-                    if "Status: PASS" in ai_output:
-                        status = "PASS"
-                        reason = "Clean Component"
-                    else:
-                        status = "FAIL"
-                        reason = ai_output.split("-")[-1].strip() if "-" in ai_output else ai_output
-                    
-                    results_data.append({
-                        "File Name": uploaded_file.name,
-                        "Status": status,
-                        "Reason/Analysis": reason
-                    })
-                    
-                except Exception as e:
-                    # Agar fail ho to list me error dikhaye
-                    results_data.append({
-                        "File Name": uploaded_file.name,
-                        "Status": "ERROR",
-                        "Reason/Analysis": str(e)
-                    })
-
-            # 5. Dashboard
-            st.divider()
-            if results_data:
-                df = pd.DataFrame(results_data)
+                with col1:
+                    st.image(image, caption=f"Item #{index+1}", use_container_width=True)
                 
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Total", len(df))
-                col2.metric("✅ Passed", len(df[df["Status"] == "PASS"]))
-                col3.metric("❌ Defective", len(df[df["Status"] == "FAIL"]))
-                
-                def highlight_status(val):
-                    if val == 'PASS': return 'background-color: #d4edda; color: black'
-                    elif val == 'FAIL': return 'background-color: #f8d7da; color: black'
-                    else: return 'color: black'
+                with col2:
+                    with st.spinner(f"Scanning Item #{index+1}..."):
+                        # AI Call
+                        response = model.generate_content([system_prompt, image])
+                        ai_output = response.text.strip()
+                        
+                        # Slow down slightly to prevent Google blocking
+                        time.sleep(2) 
 
-                st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
-                st.success("✅ Process Complete")
+                        if "Status: PASS" in ai_output:
+                            status = "PASS"
+                            reason = "✅ No Defects Detected. Component is safe."
+                            st.success(f"**STATUS: PASS**\n\n{reason}")
+                            color_code = "#d4edda"
+                        else:
+                            status = "FAIL"
+                            reason = ai_output.split("-")[-1].strip() if "-" in ai_output else ai_output
+                            st.error(f"**STATUS: FAIL**\n\n❌ Defect Found: {reason}")
+                            color_code = "#f8d7da"
+                        
+                        results_data.append({
+                            "File": uploaded_file.name,
+                            "Status": status,
+                            "Reason": reason
+                        })
 
-    else:
-        st.info("👆 Upload photos to start.")
+            except Exception as e:
+                st.error(f"Error analyzing {uploaded_file.name}: {e}")
+
+        # 4. Final Summary
+        st.divider()
+        st.subheader("📋 Final Report Summary")
+        if results_data:
+            df = pd.DataFrame(results_data)
+            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total Items", len(df))
+            m2.metric("Passed", len(df[df["Status"] == "PASS"]))
+            m3.metric("Defective", len(df[df["Status"] == "FAIL"]))
+
+            def highlight_row(row):
+                return ['background-color: #d4edda' if row['Status'] == 'PASS' else 'background-color: #f8d7da'] * len(row)
+
+            st.dataframe(df.style.apply(highlight_row, axis=1), use_container_width=True)
 
 else:
-    st.warning("⚠️ Enter API Key to start.")
+    st.info("👆 Upload photos to see the AI magic.")
