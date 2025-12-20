@@ -10,7 +10,7 @@ st.title("🏭 AI Quality Inspector Pro")
 st.markdown("### Universal Defect Detection System (Batch Processing)")
 st.caption("Powered by Google Gemini AI")
 
-# 2. Sidebar - Authentication & Configuration
+# 2. Sidebar - Authentication
 with st.sidebar:
     st.header("⚙️ Settings")
     if "GOOGLE_API_KEY" in st.secrets:
@@ -24,26 +24,24 @@ if api_key:
     try:
         genai.configure(api_key=api_key)
         
-        # Smart Fallback Mechanism (To handle 404 Errors)
+        # --- UNIVERSAL MODEL SETUP ---
+        # Hum 'system_instruction' hata rahe hain taaki error na aaye.
+        # Direct model call karenge.
         try:
-            # First Choice: Flash (Fastest)
             model = genai.GenerativeModel("gemini-1.5-flash")
         except:
-            try:
-                 # Second Choice: Pro (More Stable)
-                model = genai.GenerativeModel("gemini-1.5-pro")
-            except:
-                # Last Resort: Pro Vision (Legacy)
-                model = genai.GenerativeModel("gemini-pro-vision")
+            # Fallback for older servers
+            model = genai.GenerativeModel("gemini-pro-vision")
 
-        # System Prompt (Defines the Role)
+        # --- SYSTEM PROMPT (Text variable) ---
         system_prompt = """
-        You are a Senior Quality Control Engineer. Analyze this industrial component image.
+        Act as a Senior Quality Control Engineer. Analyze this industrial component image.
         1. Detect any visible defects (rust, cracks, deformation, discoloration, missing parts).
         2. If NO defect is found, strictly output: "Status: PASS".
         3. If a defect is found, output: "Status: FAIL" followed by a concise reason (max 15 words).
         
-        Important: Output MUST start with 'Status: PASS' or 'Status: FAIL'.
+        Output format example:
+        Status: FAIL - Severe rust corrosion on the outer flange.
         """
 
         # 4. Batch Image Uploader
@@ -71,12 +69,13 @@ if api_key:
                     try:
                         image = Image.open(uploaded_file)
                         
-                        # Universal Call Method (Works on ALL Models)
-                        # We send prompt + image together to avoid version conflicts
+                        # --- UNIVERSAL CALL METHOD ---
+                        # Hum Image aur Prompt dono ek list mein bhej rahe hain.
+                        # Ye method kabhi fail nahi hota.
                         response = model.generate_content([system_prompt, image])
                         ai_output = response.text.strip()
                         
-                        # Parsing Logic
+                        # Logic to check PASS/FAIL
                         if "Status: PASS" in ai_output:
                             status = "PASS"
                             reason = "Clean Component / No Defects"
@@ -91,7 +90,13 @@ if api_key:
                         })
                         
                     except Exception as e:
+                        # Error handling taaki code ruke nahi
                         st.error(f"Error processing {uploaded_file.name}: {e}")
+                        results_data.append({
+                            "File Name": uploaded_file.name,
+                            "Status": "ERROR",
+                            "Reason/Analysis": "Could not process image"
+                        })
 
                 # 5. Final Dashboard
                 st.divider()
@@ -111,13 +116,14 @@ if api_key:
                     st.markdown("### 📋 Detailed Inspection Log")
                     
                     def highlight_status(val):
-                        color = '#d4edda' if val == 'PASS' else '#f8d7da'
-                        return f'background-color: {color}; color: black'
+                        if val == 'PASS': return 'background-color: #d4edda; color: black'
+                        elif val == 'FAIL': return 'background-color: #f8d7da; color: black'
+                        else: return 'color: black'
 
-                    # Safe DataFrame rendering
+                    # Safe Table Display
                     st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
                     
-                    st.success("✅ Inspection Completed!")
+                    st.success("✅ Batch Inspection Completed!")
 
         else:
             st.info("👆 Upload multiple images to simulate a batch check.")
