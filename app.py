@@ -2,16 +2,15 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 import pandas as pd
-import time
 
-# 1. Page Configuration (Professional Look)
+# 1. Page Config (Professional UI)
 st.set_page_config(page_title="AI Quality Inspector Pro", page_icon="🏭", layout="wide")
 
 st.title("🏭 AI Quality Inspector Pro")
-st.markdown("### Universal Defect Detection System (Batch Processing)")
+st.markdown("### Universal Defect Detection System (Auto-Pilot)")
 st.caption("Powered by Google Gemini AI")
 
-# 2. Sidebar - Authentication
+# 2. API Key Handling
 with st.sidebar:
     st.header("⚙️ Settings")
     if "GOOGLE_API_KEY" in st.secrets:
@@ -20,26 +19,40 @@ with st.sidebar:
     else:
         api_key = st.text_input("Enter Google API Key", type="password")
 
-# --- SMART MODEL LOADER ---
-def get_gemini_response(model_name, prompt, image):
-    """Try to get response, handle errors automatically."""
-    model = genai.GenerativeModel(model_name)
-    response = model.generate_content([prompt, image])
-    return response.text.strip()
+# --- SMART MODEL FINDER ---
+def find_working_model():
+    """Google se puchta hai ki kaunsa model zinda hai."""
+    try:
+        for m in genai.list_models():
+            # Hame wo model chahiye jo content generate kare (vision/flash)
+            if 'generateContent' in m.supported_generation_methods:
+                if 'flash' in m.name: return m.name
+                if 'pro-vision' in m.name: return m.name
+                if 'gemini-1.5' in m.name: return m.name
+        return "gemini-1.5-flash" # Default fallback
+    except:
+        return "gemini-1.5-flash"
 
-# 3. Core Logic
+# 3. Main Logic
 if api_key:
     genai.configure(api_key=api_key)
     
+    # Auto-select the best available model
+    active_model_name = find_working_model()
+    # Sidebar me dikhayega kaunsa model use ho raha hai
+    with st.sidebar:
+        st.info(f"🤖 Active Model: {active_model_name}")
+
     # System Prompt
     system_prompt = """
-    Act as a Senior QA Engineer. Analyze this image.
-    1. Detect defects (rust, crack, damage).
-    2. If NO defect: Output "Status: PASS".
-    3. If defect found: Output "Status: FAIL - [Reason]".
+    Analyze this industrial image for defects (rust, cracks, damage).
+    Output format strictly:
+    Status: PASS
+    OR
+    Status: FAIL - [Reason]
     """
 
-    # 4. Batch Image Uploader
+    # 4. Upload Section
     uploaded_files = st.file_uploader(
         "Upload Component Images (Batch Mode)", 
         type=["jpg", "png", "jpeg"], 
@@ -55,25 +68,18 @@ if api_key:
         status_text = st.empty()
         
         if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
+            model = genai.GenerativeModel(active_model_name)
             
             for index, uploaded_file in enumerate(uploaded_files):
-                status_text.text(f"Processing Item {index + 1}/{len(uploaded_files)}...")
+                status_text.text(f"Inspecting Item {index + 1}/{len(uploaded_files)}...")
                 progress_bar.progress((index + 1) / len(uploaded_files))
                 
                 try:
                     image = Image.open(uploaded_file)
+                    # Universal Call (Safe for all models)
+                    response = model.generate_content([system_prompt, image])
+                    ai_output = response.text.strip()
                     
-                    # --- AUTO-SWITCH LOGIC ---
-                    # Pehle Flash try karega, fail hua to Pro Vision
-                    try:
-                        ai_output = get_gemini_response("gemini-1.5-flash", system_prompt, image)
-                    except:
-                        try:
-                            ai_output = get_gemini_response("gemini-1.5-flash-latest", system_prompt, image)
-                        except:
-                            ai_output = get_gemini_response("gemini-pro-vision", system_prompt, image)
-
-                    # Parsing Logic
                     if "Status: PASS" in ai_output:
                         status = "PASS"
                         reason = "Clean Component"
@@ -88,31 +94,33 @@ if api_key:
                     })
                     
                 except Exception as e:
-                    st.error(f"Failed {uploaded_file.name}: {e}")
+                    # Agar fail ho to list me error dikhaye
+                    results_data.append({
+                        "File Name": uploaded_file.name,
+                        "Status": "ERROR",
+                        "Reason/Analysis": str(e)
+                    })
 
-            # 5. Final Dashboard
+            # 5. Dashboard
             st.divider()
             if results_data:
                 df = pd.DataFrame(results_data)
                 
                 col1, col2, col3 = st.columns(3)
-                total = len(df)
-                passed = len(df[df["Status"] == "PASS"])
-                failed = len(df[df["Status"] == "FAIL"])
+                col1.metric("Total", len(df))
+                col2.metric("✅ Passed", len(df[df["Status"] == "PASS"]))
+                col3.metric("❌ Defective", len(df[df["Status"] == "FAIL"]))
                 
-                col1.metric("Total", total)
-                col2.metric("✅ Passed", passed)
-                col3.metric("❌ Defective", failed)
-                
-                # Styling
                 def highlight_status(val):
-                    return 'background-color: #d4edda' if val == 'PASS' else 'background-color: #f8d7da'
+                    if val == 'PASS': return 'background-color: #d4edda; color: black'
+                    elif val == 'FAIL': return 'background-color: #f8d7da; color: black'
+                    else: return 'color: black'
 
                 st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
-                st.success("✅ Inspection Completed!")
+                st.success("✅ Process Complete")
 
     else:
-        st.info("👆 Upload multiple images to check quality.")
+        st.info("👆 Upload photos to start.")
 
 else:
     st.warning("⚠️ Enter API Key to start.")
