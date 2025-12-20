@@ -118,4 +118,4 @@ if api_key:
                     color = '#d4edda' if val == 'PASS' else '#f8d7da' # Light Green vs Light Red
                     return f'background-color: {color}; color: black'
 
-                st.dataframe(df.style.applymap(highlight
+             st.dataframe(df.style.map(highlight_status, subset=['Status']), use_container_width=True)
