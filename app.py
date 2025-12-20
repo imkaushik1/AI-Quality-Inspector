@@ -8,7 +8,7 @@ st.set_page_config(page_title="AI Quality Inspector Pro", page_icon="🏭", layo
 
 st.title("🏭 AI Quality Inspector Pro")
 st.markdown("### Universal Defect Detection System (Batch Processing)")
-st.caption("Powered by Google Gemini 1.5 Flash")
+st.caption("Powered by Google Gemini AI")
 
 # 2. Sidebar - Authentication & Configuration
 with st.sidebar:
@@ -24,16 +24,27 @@ if api_key:
     try:
         genai.configure(api_key=api_key)
         
-        # System Prompt
+        # Smart Fallback Mechanism (To handle 404 Errors)
+        try:
+            # First Choice: Flash (Fastest)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+        except:
+            try:
+                 # Second Choice: Pro (More Stable)
+                model = genai.GenerativeModel("gemini-1.5-pro")
+            except:
+                # Last Resort: Pro Vision (Legacy)
+                model = genai.GenerativeModel("gemini-pro-vision")
+
+        # System Prompt (Defines the Role)
         system_prompt = """
         You are a Senior Quality Control Engineer. Analyze this industrial component image.
         1. Detect any visible defects (rust, cracks, deformation, discoloration, missing parts).
         2. If NO defect is found, strictly output: "Status: PASS".
         3. If a defect is found, output: "Status: FAIL" followed by a concise reason (max 15 words).
-        """
         
-        # FIXED MODEL NAME HERE (Standard Version)
-        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=system_prompt)
+        Important: Output MUST start with 'Status: PASS' or 'Status: FAIL'.
+        """
 
         # 4. Batch Image Uploader
         uploaded_files = st.file_uploader(
@@ -59,9 +70,13 @@ if api_key:
                     
                     try:
                         image = Image.open(uploaded_file)
-                        response = model.generate_content(image)
+                        
+                        # Universal Call Method (Works on ALL Models)
+                        # We send prompt + image together to avoid version conflicts
+                        response = model.generate_content([system_prompt, image])
                         ai_output = response.text.strip()
                         
+                        # Parsing Logic
                         if "Status: PASS" in ai_output:
                             status = "PASS"
                             reason = "Clean Component / No Defects"
