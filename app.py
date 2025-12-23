@@ -6,57 +6,30 @@ import time
 
 # 1. Page Config
 st.set_page_config(page_title="AI Quality Inspector Pro", page_icon="🏭", layout="wide")
-
 st.title("🏭 AI Quality Inspector Pro")
-st.markdown("### Universal Defect Detection System")
-st.caption("Powered by Google Gemini AI (Secure Mode)")
 
-# 2. SECURE API KEY HANDLING (No Hardcoding!)
-# Ye code ab sirf Streamlit Secrets check karega.
+# 2. STRICT AUTH CHECK (Startup Test)
+# Ye code start hote hi check karega ki Key kaam kar rahi hai ya nahi
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key=api_key)
+    try:
+        genai.configure(api_key=api_key)
+        # Turant ek choti call karke dekho ki connection zinda hai
+        models = list(genai.list_models())
+        st.sidebar.success(f"✅ Secure Connection Active")
+    except Exception as e:
+        st.sidebar.error("❌ Key Connection Failed!")
+        st.error(f"CRITICAL ERROR: API Key kaam nahi kar rahi. Details: {str(e)}")
+        st.stop()
 else:
-    # Agar Secrets me key nahi mili to ye error aayega
-    st.error("🚨 API Key Missing! Please add GOOGLE_API_KEY to Streamlit Secrets.")
+    st.error("🚨 API Key Missing! Secrets me key add karo.")
     st.stop()
 
-# --- MODEL DIAGNOSTICS & SELECTION ---
-def get_working_model():
-    available_models = []
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-    except:
-        pass
+# 3. Model Setup
+def get_best_model():
+    return "gemini-1.5-flash"
 
-    # Sidebar Status
-    with st.sidebar:
-        st.header("⚙️ System Status")
-        st.success("✅ Secure Server Connected")
-    
-    # Priority Selection (Avoid 2.5 Flash due to low quota)
-    target_models = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-pro"
-    ]
-
-    for target in target_models:
-        for available in available_models:
-            if target in available and "2.5" not in available:
-                return available
-                
-    return "gemini-1.5-flash" # Fallback
-
-# 3. Main Logic
-active_model_name = get_working_model()
-
-# Sidebar Info
-with st.sidebar:
-    st.info(f"🤖 Active Model: {active_model_name}")
+active_model_name = get_best_model()
 
 system_prompt = """
 Analyze this industrial image for defects (rust, cracks, damage).
@@ -69,8 +42,6 @@ Status: FAIL - [Reason]
 uploaded_files = st.file_uploader("Upload Component Images", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
 if uploaded_files:
-    st.info(f"ℹ️ Analyzing with {active_model_name}. Speed optimized for stability.")
-    
     if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
         st.divider()
         st.subheader("🔍 Real-Time Analysis")
@@ -86,46 +57,38 @@ if uploaded_files:
             
             with col2:
                 with st.spinner(f"Scanning Item #{index+1}..."):
-                    ai_output = "Error"
-                    # Retry Logic
-                    for attempt in range(3):
-                        try:
-                            response = model.generate_content([system_prompt, image])
-                            ai_output = response.text.strip()
-                            break 
-                        except Exception as e:
-                            error_msg = str(e)
-                            if "429" in error_msg:
-                                time.sleep(20) # Quota wait
-                            elif "403" in error_msg:
-                                ai_output = "API Key Error (Check Secrets)"
-                                break
-                            else:
-                                time.sleep(5)
                     
-                    # Parsing
-                    if "Status: PASS" in ai_output:
-                        status = "PASS"
-                        reason = "✅ No Defects Detected."
-                        st.success(f"**PASS**")
-                    elif "Status: FAIL" in ai_output:
-                        status = "FAIL"
-                        reason = ai_output.split("-")[-1].strip() if "-" in ai_output else ai_output
-                        st.error(f"**FAIL**: {reason}")
-                    else:
-                        status = "ERROR"
-                        reason = ai_output
-                        st.warning(f"⚠️ Analysis Issue: {reason}")
-                    
-                    results_data.append({"File": uploaded_file.name, "Status": status, "Reason": reason})
-                    time.sleep(10) # Safe Delay
+                    # --- THE X-RAY LOGIC ---
+                    try:
+                        # Direct call - koi retry chupaone wala logic nahi
+                        response = model.generate_content([system_prompt, image])
+                        ai_output = response.text.strip()
+                        
+                        if "Status: PASS" in ai_output:
+                            status = "PASS"
+                            reason = "✅ No Defects Detected."
+                            st.success(f"**PASS**")
+                        elif "Status: FAIL" in ai_output:
+                            status = "FAIL"
+                            reason = ai_output.split("-")[-1].strip() if "-" in ai_output else ai_output
+                            st.error(f"**FAIL**: {reason}")
+                        else:
+                            status = "ERROR"
+                            reason = ai_output
+                            st.warning(f"⚠️ Format Issue: {reason}")
 
-        # Final Report
-        st.divider()
+                    except Exception as e:
+                        # YAHAN ASLI ERROR DIKHEGA
+                        real_error = str(e)
+                        st.error(f"🛑 TECHNICAL ERROR: {real_error}")
+                        status = "CRASH"
+                        reason = real_error
+
+                    results_data.append({"File": uploaded_file.name, "Status": status, "Reason": reason})
+                    time.sleep(5) 
+
+        # Summary Table
         if results_data:
+            st.divider()
             df = pd.DataFrame(results_data)
-            def highlight_row(row):
-                if row['Status'] == 'PASS': return ['background-color: #d4edda; color: black'] * len(row)
-                elif row['Status'] == 'FAIL': return ['background-color: #f8d7da; color: black'] * len(row)
-                else: return ['color: black'] * len(row)
-            st.dataframe(df.style.apply(highlight_row, axis=1), use_container_width=True)
+            st.dataframe(df, use_container_width=True)
