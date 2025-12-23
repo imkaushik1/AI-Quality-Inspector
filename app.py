@@ -18,10 +18,34 @@ else:
     st.error("🚨 Error: API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
     st.stop()
 
-# --- 3. Model Configuration ---
-# We are hardcoding the standard name to avoid prefix errors (e.g. 'models/gemini...')
-# 'gemini-1.5-flash' is the most stable version for this library.
-current_model = "gemini-1.5-flash"
+# --- 3. Auto-Fix Model Selection ---
+# This function stops the 404 error by finding the exact model name from the server
+def find_working_model():
+    try:
+        # Ask Google for the list of available models
+        all_models = list(genai.list_models())
+        
+        # Priority 1: Find the exact name for 1.5 Flash (Stable)
+        for m in all_models:
+            if "gemini-1.5-flash" in m.name and "2.5" not in m.name:
+                return m.name # Returns the exact string, e.g., 'models/gemini-1.5-flash-001'
+        
+        # Priority 2: Find 1.5 Pro
+        for m in all_models:
+            if "gemini-1.5-pro" in m.name:
+                return m.name
+                
+        # Priority 3: Old reliable vision model
+        for m in all_models:
+            if "vision" in m.name:
+                return m.name
+                
+        return "gemini-1.5-flash" # Fallback
+    except:
+        return "gemini-1.5-flash"
+
+# Get the correct model name automatically
+current_model = find_working_model()
 
 # Sidebar Information
 with st.sidebar:
@@ -40,7 +64,7 @@ if uploaded_files:
         st.divider()
         st.subheader("🔍 Inspection Results")
         
-        # Initialize the model
+        # Initialize model with the exact name we found
         model = genai.GenerativeModel(current_model)
         inspection_results = []
         
@@ -96,14 +120,12 @@ if uploaded_files:
                         time.sleep(12)
                         
                     except Exception as e:
-                        # Fallback for 404 or other errors
+                        # Error Handling
                         st.error(f"Error: {str(e)}")
-                        status = "ERROR"
-                        reason = str(e)
                         inspection_results.append({
                             "File Name": file.name,
-                            "Status": status,
-                            "Details": reason
+                            "Status": "ERROR",
+                            "Details": str(e)
                         })
                         time.sleep(10)
 
