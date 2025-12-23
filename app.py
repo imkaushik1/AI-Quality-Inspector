@@ -18,55 +18,19 @@ else:
     st.error("🚨 Error: API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
     st.stop()
 
-# --- 3. High-Capacity Model Selector ---
-def select_best_model():
-    """
-    Scans the server list and prioritizes models with HIGH free quotas.
-    Avoids '2.5' models because they have very low daily limits.
-    """
-    try:
-        all_models = list(genai.list_models())
-        available_names = [m.name for m in all_models if 'generateContent' in m.supported_generation_methods]
-        
-        # --- PRIORITY LIST (Based on your server log) ---
-        
-        # Priority 1: Gemini 2.0 Flash (Stable, High Speed)
-        for m in available_names:
-            if "gemini-2.0-flash" in m and "exp" not in m and "lite" not in m:
-                return m
-        
-        # Priority 2: Gemini Flash Latest (Alias for the best stable flash)
-        for m in available_names:
-            if "gemini-flash-latest" in m:
-                return m
+# --- 3. Model Selector (Targeting Gemini 2.0 Flash) ---
+def get_best_model():
+    # Hum directly wo model uthayenge jo tumhare list me Available tha aur High Limit wala hai
+    target_model = "models/gemini-2.0-flash" 
+    return target_model
 
-        # Priority 3: Gemini 1.5 Flash (If available)
-        for m in available_names:
-            if "gemini-1.5-flash" in m:
-                return m
-                
-        # Priority 4: Gemini 2.0 Flash Lite (Good Backup)
-        for m in available_names:
-            if "gemini-2.0-flash-lite" in m:
-                return m
-
-        # Emergency Fallback: If nothing else, take whatever is first, but warn user
-        return available_names[0] if available_names else "models/gemini-1.5-flash"
-
-    except Exception as e:
-        return "models/gemini-1.5-flash"
-
-# Run selector
-current_model = select_best_model()
+current_model = get_best_model()
 
 # Sidebar Information
 with st.sidebar:
     st.header("System Status")
     st.success("✅ Server Online")
     st.info(f"🤖 Active Model: `{current_model}`")
-    
-    if "2.5" in current_model:
-        st.warning("⚠️ Warning: Using v2.5 (Low Quota). Inspection might stop after 20 images.")
 
 # --- 4. Main Application Loop ---
 uploaded_files = st.file_uploader("Upload Component Images", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
@@ -92,6 +56,7 @@ if uploaded_files:
             
             with col2:
                 with st.spinner("Analyzing component..."):
+                    # --- INDENTATION CRITICAL BLOCK STARTS HERE ---
                     try:
                         # Prompt Engineering
                         prompt = """
@@ -122,4 +87,51 @@ if uploaded_files:
                         else:
                             status = "REVIEW"
                             reason = text
-                            st.warning
+                            st.warning(f"⚠️ Manual Review Needed: {text}")
+                            
+                        # Save result
+                        inspection_results.append({
+                            "File Name": file.name,
+                            "Status": status,
+                            "Details": reason
+                        })
+                        
+                        # Safety Delay (10s is usually enough for 2.0 Flash)
+                        time.sleep(10)
+                        
+                    except Exception as e:
+                        # Error Handling
+                        err_msg = str(e)
+                        if "429" in err_msg:
+                            st.error("⚠️ Quota Limit Reached. Please use a new API Key.")
+                            status = "QUOTA_ERROR"
+                            reason = "Daily limit reached for this model."
+                        else:
+                            st.error(f"Error: {err_msg}")
+                            status = "ERROR"
+                            reason = err_msg
+                            
+                        inspection_results.append({
+                            "File Name": file.name,
+                            "Status": status,
+                            "Details": reason
+                        })
+                        time.sleep(5)
+                    # --- INDENTATION CRITICAL BLOCK ENDS HERE ---
+
+        # --- 5. Final Report ---
+        if inspection_results:
+            st.divider()
+            st.subheader("📋 Final Report Summary")
+            
+            df = pd.DataFrame(inspection_results)
+            
+            def highlight_status(row):
+                if row['Status'] == 'PASS':
+                    return ['background-color: #d1e7dd; color: black'] * len(row)
+                elif row['Status'] == 'FAIL':
+                    return ['background-color: #f8d7da; color: black'] * len(row)
+                else:
+                    return ['color: black'] * len(row)
+
+            st.dataframe(df.style.apply(highlight_status, axis=1), use_container_width=True)
