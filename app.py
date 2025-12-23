@@ -18,39 +18,16 @@ else:
     st.error("🚨 Error: API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
     st.stop()
 
-# --- 3. Smart Model Selection (Fix for 404 Error) ---
-# This function asks the server what is available instead of guessing
-def get_working_model_name():
-    try:
-        # Get the actual list from Google
-        models = genai.list_models()
-        
-        # Look for a vision model (prioritize 1.5-flash, avoid 2.5)
-        for m in models:
-            if 'generateContent' in m.supported_generation_methods:
-                model_name = m.name
-                
-                # We prefer 'flash' because it's fast, but we avoid '2.5' due to limits
-                if "flash" in model_name and "1.5" in model_name:
-                    return model_name
-        
-        # If 1.5 flash isn't found, grab the first available vision model (backup)
-        for m in models:
-            if 'generateContent' in m.supported_generation_methods:
-                if "vision" in m.name or "pro" in m.name:
-                    return m.name
-                    
-        return "models/gemini-1.5-flash" # Absolute fallback
-    except:
-        return "models/gemini-1.5-flash"
-
-current_model = get_working_model_name()
+# --- 3. Model Configuration ---
+# We are hardcoding the standard name to avoid prefix errors (e.g. 'models/gemini...')
+# 'gemini-1.5-flash' is the most stable version for this library.
+current_model = "gemini-1.5-flash"
 
 # Sidebar Information
 with st.sidebar:
     st.header("System Status")
     st.success("✅ Server Online")
-    st.info(f"🤖 Connected Model: `{current_model}`")
+    st.info(f"🤖 Active Model: `{current_model}`")
 
 # --- 4. Main Application Loop ---
 uploaded_files = st.file_uploader("Upload Component Images", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
@@ -63,7 +40,7 @@ if uploaded_files:
         st.divider()
         st.subheader("🔍 Inspection Results")
         
-        # Initialize the model using the EXACT name found above
+        # Initialize the model
         model = genai.GenerativeModel(current_model)
         inspection_results = []
         
@@ -115,12 +92,20 @@ if uploaded_files:
                             "Details": reason
                         })
                         
-                        # Safety Delay (Prevents 429 Error)
+                        # Safety Delay
                         time.sleep(12)
                         
                     except Exception as e:
-                        st.error(f"Processing Error: {str(e)}")
-                        time.sleep(20)
+                        # Fallback for 404 or other errors
+                        st.error(f"Error: {str(e)}")
+                        status = "ERROR"
+                        reason = str(e)
+                        inspection_results.append({
+                            "File Name": file.name,
+                            "Status": status,
+                            "Details": reason
+                        })
+                        time.sleep(10)
 
         # --- 5. Final Report ---
         if inspection_results:
