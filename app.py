@@ -8,72 +8,57 @@ import time
 st.set_page_config(page_title="AI Quality Inspector Pro", page_icon="🏭", layout="wide")
 st.title("🏭 AI Quality Inspector Pro")
 
-# 2. AUTHENTICATION & CONNECTION TEST
+# 2. AUTH CHECK
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
     try:
         genai.configure(api_key=api_key)
     except Exception as e:
-        st.error(f"Configuration Error: {e}")
+        st.error(f"Config Error: {e}")
         st.stop()
 else:
-    st.error("🚨 Secrets Missing! Add GOOGLE_API_KEY to Secrets.")
+    st.error("🚨 API Key Missing! Add GOOGLE_API_KEY to Secrets.")
     st.stop()
 
-# --- THE MODEL HUNTER (Final Fix) ---
-def get_valid_model():
-    """
-    Ye function andhe mein teer nahi chalayega.
-    Ye server se list mangega aur valid model return karega.
-    """
+# --- SMART MODEL FILTER (NO 2.5 ALLOWED) ---
+def get_safe_model():
     try:
-        # Step 1: List mangao
+        # Step 1: Get all available models
         all_models = list(genai.list_models())
+        model_names = [m.name for m in all_models if 'generateContent' in m.supported_generation_methods]
         
-        # Step 2: Filter karo (Sirf wo jo image dekh sakein)
-        vision_models = []
-        for m in all_models:
-            if 'generateContent' in m.supported_generation_methods:
-                vision_models.append(m.name)
-        
-        # Sidebar me list dikhao (Debugging ke liye)
+        # Sidebar Debugging (Dekhne ke liye server par kya hai)
         with st.sidebar:
-            st.write("📋 Available Models on Server:")
-            st.code(vision_models)
+            st.write("📋 Server List:")
+            st.code(model_names)
 
-        # Step 3: Best Model Pick karo (Priority Wise)
-        # Hum exact naam match karenge jo list me aaya hai
+        # Step 2: INTELLIGENT FILTERING
+        # Hum specifically '2.5' ko avoid karenge kyunki uski limit kam hai
         
-        # Priority 1: 1.5 Flash (Stable)
-        for m in vision_models:
-            if "gemini-1.5-flash" in m and "001" in m: # Prefer specific version
+        # Priority 1: Gemini 1.5 Flash (Best Balance)
+        for m in model_names:
+            if "gemini-1.5-flash" in m and "2.5" not in m:
                 return m
-        for m in vision_models:
-            if "gemini-1.5-flash" in m and "latest" in m:
-                return m
-        for m in vision_models:
-            if "gemini-1.5-flash" in m:
-                return m
-                
-        # Priority 2: Pro Vision (Backup)
-        for m in vision_models:
-            if "gemini-pro-vision" in m:
+        
+        # Priority 2: Gemini 1.5 Pro
+        for m in model_names:
+            if "gemini-1.5-pro" in m and "2.5" not in m:
                 return m
 
-        # Emergency: Agar upar wala kuch na mile, to pehla valid model utha lo
-        # (Lekin 2.5 se bacho agar ho sake)
-        if vision_models:
-            return vision_models[0]
-            
-        return "models/gemini-1.5-flash" # Absolute fallback
-        
+        # Priority 3: Gemini Pro Vision (Old Reliable)
+        for m in model_names:
+            if "vision" in m:
+                return m
+
+        # Fallback: Jo bhi mile (majboori mein)
+        return model_names[0] if model_names else "models/gemini-1.5-flash"
+
     except Exception as e:
-        st.sidebar.error(f"List Error: {e}")
-        return "gemini-1.5-flash"
+        return "models/gemini-1.5-flash"
 
 # Active Model Set karo
-active_model_name = get_valid_model()
-st.sidebar.success(f"✅ Connected using: `{active_model_name}`")
+active_model_name = get_safe_model()
+st.sidebar.info(f"🚀 Using Model: `{active_model_name}`")
 
 # 3. Main Logic
 system_prompt = """
@@ -87,11 +72,13 @@ Status: FAIL - [Reason]
 uploaded_files = st.file_uploader("Upload Component Images", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
 if uploaded_files:
+    # Note to user
+    st.info("ℹ️ Running in Safe Mode (12s delay) to ensure free tier stability.")
+    
     if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
         st.divider()
         st.subheader("🔍 Real-Time Analysis")
         
-        # Model Initialize with VALID name
         model = genai.GenerativeModel(active_model_name)
         results_data = []
         
@@ -105,6 +92,7 @@ if uploaded_files:
             with col2:
                 with st.spinner(f"Scanning Item #{index+1}..."):
                     try:
+                        # Call AI
                         response = model.generate_content([system_prompt, image])
                         ai_output = response.text.strip()
                         
@@ -119,16 +107,26 @@ if uploaded_files:
                         else:
                             status = "ERROR"
                             reason = ai_output
-                            st.warning(f"⚠️ Result: {reason}")
+                            st.warning(f"⚠️ Issue: {reason}")
+                        
+                        # --- CRITICAL DELAY ---
+                        # 429 Error se bachne ke liye 12 second rukna hi padega
+                        time.sleep(12) 
 
                     except Exception as e:
                         real_error = str(e)
-                        st.error(f"🛑 Error: {real_error}")
-                        status = "CRASH"
-                        reason = real_error
+                        # Agar quota error aaye tab bhi rukna padega
+                        if "429" in real_error:
+                            st.warning("⚠️ High Traffic (Quota Limit). Pausing for 20s...")
+                            time.sleep(20)
+                            status = "SKIPPED"
+                            reason = "Quota Exceeded (Try again)"
+                        else:
+                            st.error(f"🛑 Error: {real_error}")
+                            status = "CRASH"
+                            reason = real_error
 
                     results_data.append({"File": uploaded_file.name, "Status": status, "Reason": reason})
-                    time.sleep(5) 
 
         if results_data:
             st.divider()
