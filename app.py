@@ -3,11 +3,11 @@ import google.generativeai as genai
 from PIL import Image
 import pandas as pd
 import time
+import sys
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="Quality Inspector AI", page_icon="🏭", layout="wide")
 st.title("🏭 Quality Inspector AI")
-st.markdown("### Automated Defect Detection System")
 st.write("Upload images of mechanical parts to inspect for defects (Rust, Cracks, etc.)")
 
 # --- 2. API Key Authentication ---
@@ -18,118 +18,131 @@ else:
     st.error("🚨 Error: API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
     st.stop()
 
-# --- 3. Robust Analysis Function (The Fix) ---
-def analyze_image_with_fallback(image, prompt):
+# --- 3. THE NUCLEAR MODEL SELECTOR ---
+def get_any_working_model():
     """
-    Tries gemini-1.5-flash first. 
-    If it gets a 404 error, it immediately switches to gemini-pro-vision.
+    Ye function server se list mangta hai aur '1.0-pro' (Text only) ko chhod kar
+    jo bhi pehla model mile, use utha leta hai.
     """
-    # Priority 1: The Modern Model
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content([prompt, image])
-        return response.text.strip(), "gemini-1.5-flash"
-    except Exception as e:
-        # If 1.5 fails (404 Not Found), try Priority 2: The Stable Backup
-        try:
-            time.sleep(1) # Brief pause
-            model = genai.GenerativeModel("gemini-pro-vision")
-            response = model.generate_content([prompt, image])
-            return response.text.strip(), "gemini-pro-vision (Backup)"
-        except Exception as e2:
-            return None, str(e) # Return the original error if both fail
+        available_models = list(genai.list_models())
+        vision_models = []
+        
+        # Filter logic: Hame wo model chahiye jo Image dekh sake
+        for m in available_models:
+            if 'generateContent' in m.supported_generation_methods:
+                # 1.0-pro text only hai, use avoid karo
+                if "1.0-pro" not in m.name:
+                    vision_models.append(m.name)
+        
+        # Debugging: Sidebar me dikhao kya mila
+        with st.sidebar:
+            st.write("📋 Server Models List:")
+            st.code(vision_models)
 
-# Sidebar Information
+        # Selection Strategy
+        # Pehle koshish karo Flash dhoondne ki
+        for m in vision_models:
+            if "flash" in m and "1.5" in m: return m
+        
+        # Phir Pro dhoondho
+        for m in vision_models:
+            if "pro" in m and "1.5" in m: return m
+            
+        # Phir Vision dhoondho (Old)
+        for m in vision_models:
+            if "vision" in m: return m
+            
+        # Agar kuch na mile, to list ka pehla utha lo
+        if vision_models:
+            return vision_models[0]
+            
+        return "models/gemini-1.5-flash" # Absolute Fail
+        
+    except Exception as e:
+        st.sidebar.error(f"List Error: {e}")
+        return "models/gemini-1.5-flash"
+
+# Automatically find the best model name
+current_model = get_any_working_model()
+
+# Sidebar Information (Debugging Info)
 with st.sidebar:
-    st.header("System Status")
+    st.header("System Diagnostics")
     st.success("✅ Server Online")
-    st.info("🤖 Mode: Auto-Failover (Flash → Pro Vision)")
+    st.text(f"Lib Version: {genai.__version__}") # Check version
+    st.info(f"🤖 Selected Model: `{current_model}`")
 
 # --- 4. Main Application Loop ---
 uploaded_files = st.file_uploader("Upload Component Images", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
 if uploaded_files:
-    st.info("ℹ️ Note: Analysis includes a safety delay to prevent API blocking.")
+    st.info("ℹ️ Processing with dynamic model selection.")
     
     if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
         
         st.divider()
         st.subheader("🔍 Inspection Results")
         
+        # Initialize the model with the EXACT name found
+        model = genai.GenerativeModel(current_model)
         inspection_results = []
         
         for file in uploaded_files:
             col1, col2 = st.columns([1, 2])
-            
-            # Display Image
             img = Image.open(file)
             col1.image(img, caption=file.name, use_container_width=True)
             
             with col2:
                 with st.spinner("Analyzing component..."):
-                    # Prompt Engineering
-                    prompt = """
-                    Analyze this industrial image for defects (rust, cracks, damage).
-                    Output strictly in this format:
-                    Status: PASS
-                    OR
-                    Status: FAIL - [Reason]
-                    """
-                    
-                    # CALL THE ROBUST FUNCTION
-                    text, used_model = analyze_image_with_fallback(img, prompt)
-                    
-                    if text:
-                        # Logic to parse the result
+                    try:
+                        prompt = """
+                        Analyze this industrial image for defects (rust, cracks, damage).
+                        Output strictly in this format:
+                        Status: PASS
+                        OR
+                        Status: FAIL - [Reason]
+                        """
+                        
+                        response = model.generate_content([prompt, img])
+                        text = response.text.strip()
+                        
                         if "Status: PASS" in text:
                             status = "PASS"
                             reason = "✅ No defects detected. Component is safe."
                             st.success(f"**STATUS: PASS**")
                             st.caption(reason)
-                            
                         elif "Status: FAIL" in text:
                             status = "FAIL"
                             reason = text.split("-")[-1].strip() if "-" in text else text
                             st.error(f"**STATUS: FAIL**")
                             st.markdown(f"**Defect:** {reason}")
-                            
                         else:
                             status = "REVIEW"
                             reason = text
                             st.warning(f"⚠️ Manual Review Needed: {text}")
                             
-                        # Save result
                         inspection_results.append({
                             "File Name": file.name,
                             "Status": status,
-                            "Details": reason,
-                            "Model Used": used_model
+                            "Details": reason
                         })
-                    else:
-                        st.error(f"Failed to analyze. Error: {used_model}") # used_model holds error msg here
+                        time.sleep(10)
+                        
+                    except Exception as e:
+                        st.error(f"Processing Failed: {str(e)}")
                         inspection_results.append({
                             "File Name": file.name,
                             "Status": "ERROR",
-                            "Details": "API Connection Failed",
-                            "Model Used": "None"
+                            "Details": str(e)
                         })
-                    
-                    # Safety Delay
-                    time.sleep(12)
+                        time.sleep(5)
 
-        # --- 5. Final Report ---
         if inspection_results:
             st.divider()
-            st.subheader("📋 Final Report Summary")
-            
             df = pd.DataFrame(inspection_results)
-            
             def highlight_status(row):
-                if row['Status'] == 'PASS':
-                    return ['background-color: #d1e7dd; color: black'] * len(row)
-                elif row['Status'] == 'FAIL':
-                    return ['background-color: #f8d7da; color: black'] * len(row)
-                else:
-                    return ['color: black'] * len(row)
-
+                if row['Status'] == 'PASS': return ['background-color: #d1e7dd; color: black'] * len(row)
+                elif row['Status'] == 'FAIL': return ['background-color: #f8d7da; color: black'] * len(row)
+                else: return ['color: black'] * len(row)
             st.dataframe(df.style.apply(highlight_status, axis=1), use_container_width=True)
