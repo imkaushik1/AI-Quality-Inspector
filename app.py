@@ -18,54 +18,44 @@ else:
     st.error("🚨 Error: API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
     st.stop()
 
-# --- 3. Auto-Fix Model Selection ---
-# This function stops the 404 error by finding the exact model name from the server
-def find_working_model():
+# --- 3. Robust Analysis Function (The Fix) ---
+def analyze_image_with_fallback(image, prompt):
+    """
+    Tries gemini-1.5-flash first. 
+    If it gets a 404 error, it immediately switches to gemini-pro-vision.
+    """
+    # Priority 1: The Modern Model
     try:
-        # Ask Google for the list of available models
-        all_models = list(genai.list_models())
-        
-        # Priority 1: Find the exact name for 1.5 Flash (Stable)
-        for m in all_models:
-            if "gemini-1.5-flash" in m.name and "2.5" not in m.name:
-                return m.name # Returns the exact string, e.g., 'models/gemini-1.5-flash-001'
-        
-        # Priority 2: Find 1.5 Pro
-        for m in all_models:
-            if "gemini-1.5-pro" in m.name:
-                return m.name
-                
-        # Priority 3: Old reliable vision model
-        for m in all_models:
-            if "vision" in m.name:
-                return m.name
-                
-        return "gemini-1.5-flash" # Fallback
-    except:
-        return "gemini-1.5-flash"
-
-# Get the correct model name automatically
-current_model = find_working_model()
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content([prompt, image])
+        return response.text.strip(), "gemini-1.5-flash"
+    except Exception as e:
+        # If 1.5 fails (404 Not Found), try Priority 2: The Stable Backup
+        try:
+            time.sleep(1) # Brief pause
+            model = genai.GenerativeModel("gemini-pro-vision")
+            response = model.generate_content([prompt, image])
+            return response.text.strip(), "gemini-pro-vision (Backup)"
+        except Exception as e2:
+            return None, str(e) # Return the original error if both fail
 
 # Sidebar Information
 with st.sidebar:
     st.header("System Status")
     st.success("✅ Server Online")
-    st.info(f"🤖 Active Model: `{current_model}`")
+    st.info("🤖 Mode: Auto-Failover (Flash → Pro Vision)")
 
 # --- 4. Main Application Loop ---
 uploaded_files = st.file_uploader("Upload Component Images", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
 if uploaded_files:
-    st.info("ℹ️ Note: A 12-second delay is applied between images to ensure API stability.")
+    st.info("ℹ️ Note: Analysis includes a safety delay to prevent API blocking.")
     
     if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
         
         st.divider()
         st.subheader("🔍 Inspection Results")
         
-        # Initialize model with the exact name we found
-        model = genai.GenerativeModel(current_model)
         inspection_results = []
         
         for file in uploaded_files:
@@ -77,20 +67,19 @@ if uploaded_files:
             
             with col2:
                 with st.spinner("Analyzing component..."):
-                    try:
-                        # Prompt Engineering
-                        prompt = """
-                        Analyze this industrial image for defects (rust, cracks, damage).
-                        Output strictly in this format:
-                        Status: PASS
-                        OR
-                        Status: FAIL - [Reason]
-                        """
-                        
-                        # AI Request
-                        response = model.generate_content([prompt, img])
-                        text = response.text.strip()
-                        
+                    # Prompt Engineering
+                    prompt = """
+                    Analyze this industrial image for defects (rust, cracks, damage).
+                    Output strictly in this format:
+                    Status: PASS
+                    OR
+                    Status: FAIL - [Reason]
+                    """
+                    
+                    # CALL THE ROBUST FUNCTION
+                    text, used_model = analyze_image_with_fallback(img, prompt)
+                    
+                    if text:
                         # Logic to parse the result
                         if "Status: PASS" in text:
                             status = "PASS"
@@ -113,21 +102,20 @@ if uploaded_files:
                         inspection_results.append({
                             "File Name": file.name,
                             "Status": status,
-                            "Details": reason
+                            "Details": reason,
+                            "Model Used": used_model
                         })
-                        
-                        # Safety Delay
-                        time.sleep(12)
-                        
-                    except Exception as e:
-                        # Error Handling
-                        st.error(f"Error: {str(e)}")
+                    else:
+                        st.error(f"Failed to analyze. Error: {used_model}") # used_model holds error msg here
                         inspection_results.append({
                             "File Name": file.name,
                             "Status": "ERROR",
-                            "Details": str(e)
+                            "Details": "API Connection Failed",
+                            "Model Used": "None"
                         })
-                        time.sleep(10)
+                    
+                    # Safety Delay
+                    time.sleep(12)
 
         # --- 5. Final Report ---
         if inspection_results:
