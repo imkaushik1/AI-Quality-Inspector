@@ -18,13 +18,10 @@ else:
     st.error("🚨 Error: API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
     st.stop()
 
-# --- 3. Model Selector (Targeting Gemini 2.0 Flash) ---
-def get_best_model():
-    # Hum directly wo model uthayenge jo tumhare list me Available tha aur High Limit wala hai
-    target_model = "models/gemini-2.0-flash" 
-    return target_model
-
-current_model = get_best_model()
+# --- 3. Model Configuration ---
+# We use 'gemini-flash-latest' because it was explicitly in your server list
+# and usually has the best free-tier limits.
+current_model = "models/gemini-flash-latest"
 
 # Sidebar Information
 with st.sidebar:
@@ -56,7 +53,6 @@ if uploaded_files:
             
             with col2:
                 with st.spinner("Analyzing component..."):
-                    # --- INDENTATION CRITICAL BLOCK STARTS HERE ---
                     try:
                         # Prompt Engineering
                         prompt = """
@@ -96,7 +92,7 @@ if uploaded_files:
                             "Details": reason
                         })
                         
-                        # Safety Delay (10s is usually enough for 2.0 Flash)
+                        # Safety Delay (Important)
                         time.sleep(10)
                         
                     except Exception as e:
@@ -105,7 +101,7 @@ if uploaded_files:
                         if "429" in err_msg:
                             st.error("⚠️ Quota Limit Reached. Please use a new API Key.")
                             status = "QUOTA_ERROR"
-                            reason = "Daily limit reached for this model."
+                            reason = "Daily limit reached."
                         else:
                             st.error(f"Error: {err_msg}")
                             status = "ERROR"
@@ -117,7 +113,6 @@ if uploaded_files:
                             "Details": reason
                         })
                         time.sleep(5)
-                    # --- INDENTATION CRITICAL BLOCK ENDS HERE ---
 
         # --- 5. Final Report ---
         if inspection_results:
