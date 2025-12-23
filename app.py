@@ -4,131 +4,136 @@ from PIL import Image
 import pandas as pd
 import time
 
-# 1. Page Config
-st.set_page_config(page_title="AI Quality Inspector Pro", page_icon="🏭", layout="wide")
-st.title("🏭 AI Quality Inspector Pro")
+# --- 1. Page Configuration ---
+st.set_page_config(page_title="Quality Inspector AI", page_icon="🏭", layout="wide")
+st.title("🏭 Quality Inspector AI")
+st.markdown("### Automated Defect Detection System")
+st.write("Upload images of mechanical parts to inspect for defects (Rust, Cracks, etc.)")
 
-# 2. AUTH CHECK
+# --- 2. API Key Authentication ---
+# Check if the API key is available in Streamlit Secrets
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
-    try:
-        genai.configure(api_key=api_key)
-    except Exception as e:
-        st.error(f"Config Error: {e}")
-        st.stop()
+    genai.configure(api_key=api_key)
 else:
-    st.error("🚨 API Key Missing! Add GOOGLE_API_KEY to Secrets.")
+    st.error("🚨 Error: API Key not found. Please add GOOGLE_API_KEY to Streamlit Secrets.")
     st.stop()
 
-# --- SMART MODEL FILTER (NO 2.5 ALLOWED) ---
-def get_safe_model():
+# --- 3. Model Selection Logic ---
+# Function to find a stable model and avoid experimental ones with low quotas
+def select_stable_model():
     try:
-        # Step 1: Get all available models
-        all_models = list(genai.list_models())
-        model_names = [m.name for m in all_models if 'generateContent' in m.supported_generation_methods]
+        # Get list of models from Google
+        all_models = genai.list_models()
         
-        # Sidebar Debugging (Dekhne ke liye server par kya hai)
-        with st.sidebar:
-            st.write("📋 Server List:")
-            st.code(model_names)
-
-        # Step 2: INTELLIGENT FILTERING
-        # Hum specifically '2.5' ko avoid karenge kyunki uski limit kam hai
+        for m in all_models:
+            if 'generateContent' in m.supported_generation_methods:
+                name = m.name
+                # We specifically look for '1.5-flash' and avoid '2.5' to prevent rate limit errors
+                if "gemini-1.5-flash" in name and "2.5" not in name:
+                    return name
         
-        # Priority 1: Gemini 1.5 Flash (Best Balance)
-        for m in model_names:
-            if "gemini-1.5-flash" in m and "2.5" not in m:
-                return m
-        
-        # Priority 2: Gemini 1.5 Pro
-        for m in model_names:
-            if "gemini-1.5-pro" in m and "2.5" not in m:
-                return m
-
-        # Priority 3: Gemini Pro Vision (Old Reliable)
-        for m in model_names:
-            if "vision" in m:
-                return m
-
-        # Fallback: Jo bhi mile (majboori mein)
-        return model_names[0] if model_names else "models/gemini-1.5-flash"
-
-    except Exception as e:
+        return "models/gemini-1.5-flash" # Default fallback
+    except:
         return "models/gemini-1.5-flash"
 
-# Active Model Set karo
-active_model_name = get_safe_model()
-st.sidebar.info(f"🚀 Using Model: `{active_model_name}`")
+current_model = select_stable_model()
 
-# 3. Main Logic
-system_prompt = """
-Analyze this industrial image for defects (rust, cracks, damage).
-Output format strictly:
-Status: PASS
-OR
-Status: FAIL - [Reason]
-"""
+# Sidebar Information
+with st.sidebar:
+    st.header("System Status")
+    st.success("✅ Server Online")
+    st.info(f"🤖 Active Model: `{current_model}`")
 
+# --- 4. Main Application Loop ---
 uploaded_files = st.file_uploader("Upload Component Images", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
 if uploaded_files:
-    # Note to user
-    st.info("ℹ️ Running in Safe Mode (12s delay) to ensure free tier stability.")
+    st.info("ℹ️ Note: A 12-second delay is applied between images to ensure API stability on the free tier.")
     
     if st.button(f"Start Inspection for {len(uploaded_files)} Items"):
+        
         st.divider()
-        st.subheader("🔍 Real-Time Analysis")
+        st.subheader("🔍 Inspection Results")
         
-        model = genai.GenerativeModel(active_model_name)
-        results_data = []
+        # Initialize model
+        model = genai.GenerativeModel(current_model)
+        inspection_results = []
         
-        for index, uploaded_file in enumerate(uploaded_files):
+        # Process each uploaded file
+        for file in uploaded_files:
             col1, col2 = st.columns([1, 2])
-            image = Image.open(uploaded_file)
             
-            with col1:
-                st.image(image, caption=f"Item #{index+1}", use_container_width=True)
+            # Display Image
+            img = Image.open(file)
+            col1.image(img, caption=file.name, use_container_width=True)
             
             with col2:
-                with st.spinner(f"Scanning Item #{index+1}..."):
+                with st.spinner("Analyzing component..."):
                     try:
-                        # Call AI
-                        response = model.generate_content([system_prompt, image])
-                        ai_output = response.text.strip()
+                        # Prompt Engineering
+                        prompt = """
+                        Analyze this industrial image for defects (rust, cracks, damage).
+                        Output strictly in this format:
+                        Status: PASS
+                        OR
+                        Status: FAIL - [Reason]
+                        """
                         
-                        if "Status: PASS" in ai_output:
+                        # AI Request
+                        response = model.generate_content([prompt, img])
+                        text = response.text.strip()
+                        
+                        # logic to parse the result
+                        if "Status: PASS" in text:
                             status = "PASS"
-                            reason = "✅ No Defects Detected."
-                            st.success(f"**PASS**")
-                        elif "Status: FAIL" in ai_output:
+                            reason = "✅ No defects detected. Component is safe."
+                            st.success(f"**STATUS: PASS**")
+                            st.caption(reason)
+                            
+                        elif "Status: FAIL" in text:
                             status = "FAIL"
-                            reason = ai_output.split("-")[-1].strip() if "-" in ai_output else ai_output
-                            st.error(f"**FAIL**: {reason}")
+                            # Extracting the reason string
+                            reason = text.split("-")[-1].strip() if "-" in text else text
+                            st.error(f"**STATUS: FAIL**")
+                            st.markdown(f"**Defect:** {reason}")
+                            
                         else:
-                            status = "ERROR"
-                            reason = ai_output
-                            st.warning(f"⚠️ Issue: {reason}")
+                            status = "REVIEW"
+                            reason = text
+                            st.warning(f"⚠️ Manual Review Needed: {text}")
+                            
+                        # Save result to list
+                        inspection_results.append({
+                            "File Name": file.name,
+                            "Status": status,
+                            "Details": reason
+                        })
                         
-                        # --- CRITICAL DELAY ---
-                        # 429 Error se bachne ke liye 12 second rukna hi padega
-                        time.sleep(12) 
-
+                        # Safety Delay (Prevents 429 Quota Error)
+                        time.sleep(12)
+                        
                     except Exception as e:
-                        real_error = str(e)
-                        # Agar quota error aaye tab bhi rukna padega
-                        if "429" in real_error:
-                            st.warning("⚠️ High Traffic (Quota Limit). Pausing for 20s...")
-                            time.sleep(20)
-                            status = "SKIPPED"
-                            reason = "Quota Exceeded (Try again)"
-                        else:
-                            st.error(f"🛑 Error: {real_error}")
-                            status = "CRASH"
-                            reason = real_error
+                        st.error(f"Processing Error: {str(e)}")
+                        # Extended wait if an error occurs
+                        time.sleep(20)
 
-                    results_data.append({"File": uploaded_file.name, "Status": status, "Reason": reason})
-
-        if results_data:
+        # --- 5. Final Report Generation ---
+        if inspection_results:
             st.divider()
-            df = pd.DataFrame(results_data)
-            st.dataframe(df, use_container_width=True)
+            st.subheader("📋 Final Report Summary")
+            
+            # Create a DataFrame
+            df = pd.DataFrame(inspection_results)
+            
+            # Simple styling function for the table
+            def highlight_status(row):
+                if row['Status'] == 'PASS':
+                    return ['background-color: #d1e7dd; color: black'] * len(row) # Green
+                elif row['Status'] == 'FAIL':
+                    return ['background-color: #f8d7da; color: black'] * len(row) # Red
+                else:
+                    return ['color: black'] * len(row)
+
+            # Display the styled table
+            st.dataframe(df.style.apply(highlight_status, axis=1), use_container_width=True)
