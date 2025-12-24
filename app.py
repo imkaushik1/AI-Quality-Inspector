@@ -129,4 +129,11 @@ if uploaded_files:
                 else:
                     return ['color: black'] * len(row)
 
-            st.dataframe(df.style.apply(highlight_status, axis=1), use_container_width=True)
+            # --- DOWNLOAD BUTTON FEATURE ---
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Inspection Report (CSV)",
+                data=csv,
+                file_name="inspection_report.csv",
+                mime="text/csv",
+            )
